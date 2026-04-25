@@ -3,7 +3,9 @@ import os
 from playwright.sync_api import sync_playwright
 
 
-def download_and_render_pages(doc_id: str, output_dir: str = "output") -> list:
+def download_and_render_pages(
+    doc_id: str, doc_index: int = 1, output_dir: str = "output"
+) -> list:
     """Downloads SVGs using Playwright and saves them as single-page PDFs."""
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -39,7 +41,9 @@ def download_and_render_pages(doc_id: str, output_dir: str = "output") -> list:
                     print("Could not find SVG dimensions. Stopping.")
                     break
 
-                temp_pdf = os.path.join(output_dir, f"temp_page_{page}.pdf")
+                temp_pdf = os.path.join(
+                    output_dir, f"temp_doc{doc_index:03d}_page_{page:04d}.pdf"
+                )
 
                 # Force Chromium to print exactly that size
                 page_context.pdf(
