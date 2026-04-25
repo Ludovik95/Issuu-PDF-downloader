@@ -15,6 +15,7 @@ def main():
         doc_infos = json.loads(response.read().decode())
 
     thumbnail_url = doc_infos["thumbnail_url"]
+    doc_name = doc_infos["title"]
     doc_id = thumbnail_url.split('/')[3]
 
     merger = PdfWriter()
@@ -64,7 +65,7 @@ def main():
 
     # Save the combined final PDF
     if temp_files:
-        output_filename = f"output/{doc_id}.pdf"
+        output_filename = f"output/{doc_name}.pdf"
         print(f"Saving all pages into final {output_filename}...")
         
         merger.write(output_filename)
