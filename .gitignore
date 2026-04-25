@@ -1,2 +1,4 @@
 /output
 /venv
+__pycache__
+.gitignore
