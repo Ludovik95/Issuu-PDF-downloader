@@ -6,7 +6,6 @@ from pypdf import PdfWriter
 
 def main():
     input_url = input("Enter the document URL: ")
-    n_pages = int(input("Enter the number of pages to download: "))
     
     # Fetch the JSON data from Issuu
     doc_infos_url = f"https://issuu.com/oembed?url={input_url}&format=json"
@@ -28,20 +27,35 @@ def main():
         browser = p.chromium.launch()
         page_context = browser.new_page()
 
-        for page in range(1, n_pages + 1):
+        page = 1
+        while True:
             page_url = f"https://svg.issuu.com/{doc_id}/page_{page}.svg"
             print(f"Downloading & rendering page {page} from {page_url} ...")
             
             try:
                 # Load the raw SVG page directly into Chromium
-                page_context.goto(page_url, wait_until="networkidle")
+                response = page_context.goto(page_url, wait_until="networkidle")
+                
+                # Stop if we hit an error (e.g., 403 Forbidden or 404 Not Found at end of document)
+                if response and not response.ok:
+                    print(f"End of document reached at page {page} (HTTP {response.status}).")
+                    break
                 
                 # Ask the browser how big the original SVG canvas is
                 dimensions = page_context.evaluate("""() => { 
                     const svg = document.querySelector('svg'); 
+                    if (!svg) return null;
                     return { width: svg.viewBox.baseVal.width, height: svg.viewBox.baseVal.height }; 
                 }""")
                 
+                if not dimensions:
+                    print("Could not find SVG dimensions. Stopping.")
+                    break
+                
+                # Make sure the output folder exists
+                if not os.path.exists("output"):
+                    os.makedirs("output")
+                    
                 temp_pdf = f"output/temp_page_{page}.pdf"
                 
                 # Force Chromium to print exactly that size, generating a perfect vector PDF
@@ -58,8 +72,12 @@ def main():
                 merger.append(temp_pdf)
                 temp_files.append(temp_pdf)
                 
+                # Move to the next page
+                page += 1
+                
             except Exception as e:
-                print(f"Failed to download/render page {page}: {e}")
+                print(f"Failed to download/render page {page}: {e}. Stopping.")
+                break
 
         browser.close()
 
