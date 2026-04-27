@@ -1,6 +1,9 @@
 import os
 import re
 
+from docling.document_converter import DocumentConverter
+from playwright.sync_api import sync_playwright
+
 from converter import convert_pdf_to_markdown
 from merger import merge_pdfs
 from metadata import get_document_info
@@ -62,62 +65,82 @@ def main():
     merge_all = merge_choice == "y"
     all_temp_files = []
 
-    for idx, input_url in enumerate(urls, start=1):
-        print(f"\n--- Processing Document {idx}/{len(urls)} ---")
-        try:
-            # 1. Fetch document data
-            doc_info = get_document_info(input_url)
-            doc_id = doc_info["doc_id"]
-            safe_title = clean_filename(doc_info["title"])
+    shared_converter = None
+    if download_md:
+        # Load heavy Docling model just once at the start
+        print("\nLoading Docling AI models into memory... (This takes a few seconds)")
+        shared_converter = DocumentConverter()
 
-            # 2. Download and render individual pages
-            temp_files = download_and_render_pages(
-                doc_id=doc_id, doc_index=idx, output_dir="output"
-            )
+    print("\nStarting Playwright browser engine for the session...")
+    with sync_playwright() as p:
+        shared_browser = p.chromium.launch()
 
-            if not temp_files:
-                print(f"Skipping '{safe_title}' because no pages were downloaded.")
-                continue
+        for idx, input_url in enumerate(urls, start=1):
+            print(f"\n--- Processing Document {idx}/{len(urls)} ---")
+            try:
+                # 1. Fetch document data
+                doc_info = get_document_info(input_url)
+                doc_id = doc_info["doc_id"]
+                safe_title = clean_filename(doc_info["title"])
 
-            # 3. Handle PDF grouping or singular output
-            if merge_all:
-                all_temp_files.extend(temp_files)
-            else:
-                final_output = f"output/{safe_title}.pdf"
-                merge_pdfs(temp_files, final_output)
+                # 2. Download and render individual pages
+                temp_files = download_and_render_pages(
+                    doc_id=doc_id,
+                    doc_index=idx,
+                    output_dir="output",
+                    browser=shared_browser,
+                )
 
-                # Process the PDF using Docling if Markdown is requested
-                if download_md:
-                    md_output = f"output/{safe_title}.md"
-                    convert_pdf_to_markdown(final_output, md_output)
+                if not temp_files:
+                    print(f"Skipping '{safe_title}' because no pages were downloaded.")
+                    continue
 
-                # Clean up intermediate PDF if only Markdown was requested
-                if not download_pdf:
-                    print(
-                        f"Removing intermediate PDF {final_output} (only Mardskdown requested)..."
-                    )
-                    if os.path.exists(final_output):
-                        os.remove(final_output)
+                # 3. Handle PDF grouping or singular output
+                if merge_all:
+                    all_temp_files.extend(temp_files)
+                else:
+                    final_output = f"output/{safe_title}.pdf"
+                    merge_pdfs(temp_files, final_output)
 
-        except Exception as e:
-            print(f"An error occurred while processing {input_url}: {e}")
+                    # Process the PDF using Docling if Markdown is requested
+                    if download_md:
+                        md_output = f"output/{safe_title}.md"
+                        convert_pdf_to_markdown(
+                            final_output, md_output, converter=shared_converter
+                        )
 
-    # 4. Final merge step if user wanted them combined
-    if merge_all and all_temp_files:
-        final_output = "output/Merged_Documents.pdf"
-        print(f"\n--- Merging ALL documents into {final_output} ---")
-        merge_pdfs(all_temp_files, final_output)
+                    # Clean up intermediate PDF if only Markdown was requested
+                    if not download_pdf:
+                        print(
+                            f"Removing intermediate PDF {final_output} (only Mardskdown requested)..."
+                        )
+                        if os.path.exists(final_output):
+                            os.remove(final_output)
 
-        if download_md:
-            md_output = "output/Merged_Documents.md"
-            convert_pdf_to_markdown(final_output, md_output)
+            except Exception as e:
+                print(f"An error occurred while processing {input_url}: {e}")
 
-        if not download_pdf:
-            print(
-                f"Removing intermediate PDF {final_output} (only Markdown requested)..."
-            )
-            if os.path.exists(final_output):
-                os.remove(final_output)
+        # 4. Final merge step if user wanted them combined
+        if merge_all and all_temp_files:
+            final_output = "output/Merged_Documents.pdf"
+            print(f"\n--- Merging ALL documents into {final_output} ---")
+            merge_pdfs(all_temp_files, final_output)
+
+            if download_md:
+                md_output = "output/Merged_Documents.md"
+                convert_pdf_to_markdown(
+                    final_output, md_output, converter=shared_converter
+                )
+
+            if not download_pdf:
+                print(
+                    f"Removing intermediate PDF {final_output} (only Markdown requested)..."
+                )
+                if os.path.exists(final_output):
+                    os.remove(final_output)
+
+        # Close the shared browser instance safely when everything is done
+        shared_browser.close()
 
 
 if __name__ == "__main__":
